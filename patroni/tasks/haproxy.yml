@@ -1,0 +1,67 @@
+---
+- name: '[RHEL 7/8]install HAproxy and keepalived'
+  yum:
+    name: '{{ item }}'
+    state: latest
+    update_cache: yes
+    disable_gpg_check: yes
+  loop:
+    - haproxy
+    - keepalived
+  when:
+    - ansible_distribution_file_variety == 'RedHat'
+  tags:
+    - install
+
+- name: '[Debian]install HAproxy and keepalived'
+  apt:
+    name: '{{ item }}'
+    state: latest
+    update_cache: yes
+  loop:
+    - haproxy
+    - keepalived
+  when:
+    - ansible_distribution_file_variety == 'Debian'
+  tags:
+    - install
+      
+- name: 'enable forwarding'
+  sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    sysctl_set: yes
+
+- name: 'change sysctl.conf file-max'
+  sysctl:
+    name: fs.file-max
+    value: '{{ limit }}'
+    state: present
+    sysctl_set: yes
+
+- name: 'change ulimit -n'
+  lineinfile:
+    path: /etc/security/limits.conf
+    line: |
+      *     soft nofile {{ limit }}
+      *     hard nofile {{ limit }}
+
+- name: 'haproxy.cfg template'
+  template:
+   src: ha/haproxy.cfg.j2
+   dest: /etc/haproxy/haproxy.cfg
+  notify: restart-ha
+
+- name: 'copy keepalived config master'
+  template:
+    src: ha/keepalived-master.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  notify: restart-keepalived
+  when: inventory_hostname == keep_master
+
+- name: 'copy keepalived config backup'
+  template:
+    src: ha/keepalived-backup.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+  notify: restart-keepalived
+  when: inventory_hostname == keep_backup

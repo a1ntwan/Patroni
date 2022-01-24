@@ -1,0 +1,32 @@
+global 
+    maxconn {{ limit }} 
+        defaults 
+            log     global 
+            mode    tcp 
+            retries 2 
+            timeout client 30m 
+            timeout connect 4s 
+            timeout server 30m 
+            timeout check 5s 
+
+        listen stats
+            mode http
+            bind *:32700
+            stats enable
+            stats uri /
+ 
+        frontend ft_postgresql 
+            bind *:5000 
+            mode tcp
+            default_backend bk_postgresql
+ 
+        backend bk_postgresql
+            balance roundrobin
+            mode tcp
+            option tcp-check
+{% for host in groups['pgbouncer'] %}
+            server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['ansible_host'] }}:6432 check
+{% endfor %}
+
+
+

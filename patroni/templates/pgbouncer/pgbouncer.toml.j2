@@ -1,0 +1,16 @@
+[template]
+prefix = "/cluster/patroni"
+{% if ansible_distribution_file_variety == 'RedHat' %}
+owner = "pgbouncer"
+{% elif ansible_distribution_file_variety == 'Debian' %}
+owner = "postgres"
+{% endif %}
+mode = "0644"
+src = "pgbouncer.ini.tmpl"
+dest = "/etc/pgbouncer/pgbouncer.ini"
+
+reload_cmd = "/usr/bin/sudo /usr/bin/systemctl reload pgbouncer"
+
+keys = [
+    "/members/","/leader"
+]

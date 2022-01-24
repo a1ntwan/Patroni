@@ -1,0 +1,113 @@
+---
+- block:
+  - name: '[Debian/Ubuntu] Grafana requirements installation'
+    apt:
+      name: '{{ item }}'
+      state: present
+      update_cache: yes
+    loop:
+      - adduser
+      - libfontconfig1
+  when:
+    - ansible_distribution_file_variety == 'Debian'
+  tags:
+    - install
+
+- block:
+  - name: '[RHEL7/RHEL8] Grafana requirements installation'
+    yum:
+      name: '{{ item }}'
+      state: present
+      update_cache: yes
+    loop:
+      - urw-fonts
+      - fontconfig
+  when:
+    - ansible_distribution_file_variety == 'RedHat'
+  tags:
+    - install
+
+- name: 'create user prometheus'
+  user:
+    name: prometheus
+
+- block:
+  - name: '[Debian/Ubuntu] download and install Grafana'
+    apt:
+      deb: https://dl.grafana.com/oss/release/grafana_8.2.1_amd64.deb
+  when:
+    - ansible_distribution_file_variety == 'Debian'
+  tags:
+    - install
+    - prometheus
+
+- block:
+  - name: '[RHEL7/RHEL8] download and install Grafana'
+    yum:
+      name: https://dl.grafana.com/oss/release/grafana-8.2.1-1.x86_64.rpm
+      state: present
+  when:
+    - ansible_distribution_file_variety == 'RedHat'
+  tags:
+    - install
+    - prometheus
+
+- name: 'download Prometheus and extract tar.gz'
+  unarchive:
+    src: https://github.com/prometheus/prometheus/releases/download/v2.30.3/prometheus-2.30.3.linux-amd64.tar.gz
+    dest: /tmp/
+    remote_src: yes
+  tags:
+    - install
+    - prometheus
+
+- name: 'move binaries'
+  copy:
+    src: '{{ item }}'
+    dest: /usr/local/bin/
+    owner: prometheus
+    group: prometheus
+    mode: '0700'
+    remote_src: true
+  loop:
+   - /tmp/prometheus-2.30.3.linux-amd64/prometheus
+   - /tmp/prometheus-2.30.3.linux-amd64/promtool
+  tags:
+    - install
+    - prometheus
+
+- name: 'create /etc/prometheus and /var/lib/prometheus'
+  file:
+    path: '{{ item }}'
+    owner: prometheus
+    group: prometheus
+    state: directory
+    mode: '0750'
+  loop:
+    - /var/lib/prometheus
+    - /etc/prometheus
+
+- name: 'copy prometheus console dirs to /etc/prometheus'
+  copy:
+    src: '{{ item }}'
+    dest: /etc/prometheus/
+    owner: prometheus
+    group: prometheus
+    mode: '0750'
+    remote_src: true
+  loop:
+   - /tmp/prometheus-2.30.3.linux-amd64/console_libraries
+   - /tmp/prometheus-2.30.3.linux-amd64/consoles
+
+- name: 'copy prometheus.yml template'
+  template:
+    src: monitoring/prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+
+- name: 'create service files'
+  copy:
+    src: monitoring/prometheus.service
+    dest: /etc/systemd/system/
+  notify:
+    - restart-prometheus
+    - restart-grafana

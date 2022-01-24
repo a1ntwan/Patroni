@@ -1,0 +1,27 @@
+#!/bin/bash
+
+etcd=({% for host in groups['etcd'] %} {{ hostvars[host]['ansible_host'] }}{%- endfor %} )
+ip=${etcd[RANDOM%3]}
+
+if [ "$(curl -si http://"$ip":2379/v2/keys/cluster/patroni/members | head -1 | cut -f2 -d " ")" -ne "200" ]; then
+  echo "etcd cluster is unreachable!!!" | /usr/bin/systemd-cat -p alert -t patroni
+  exit 1
+fi
+
+members_running=$(/usr/bin/curl -s http://"$ip":2379/v2/keys/cluster/patroni/members/ | /usr/bin/grep -Eo ".state..:..running." | /usr/bin/wc -l)
+
+while true; do
+  if [ "$members_running" -lt 3 ]; then
+    /bin/sleep 180
+    members_running=$(/usr/bin/curl -s http://"$ip":2379/v2/keys/cluster/patroni/members/ | /usr/bin/grep -Eo ".state..:..running." | /usr/bin/wc -l)
+    if [ "$members_running" -lt 3 ]; then
+      /bin/ssh postgres@{{ hostvars['res1']['ansible_host'] }} -o "StrictHostKeyChecking=no"  "/usr/bin/sudo /usr/bin/systemctl restart patroni.service"
+      break
+    else
+      break
+    fi
+  else
+    break
+  fi
+done
+

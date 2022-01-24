@@ -1,0 +1,27 @@
+---
+- name: 'create user node_exporter'
+  user:
+    name: node_exporter
+    password: "{{ 'exporter' | password_hash('sha512') }}"
+
+- name: 'download Node Exporter and extract tar.gz'
+  unarchive:
+    src: 'https://github.com/prometheus/node_exporter/releases/download/v1.2.2/node_exporter-1.2.2.linux-amd64.tar.gz'
+    dest: /tmp
+    remote_src: yes
+
+- name: 'move binary'
+  copy:
+    src: /tmp/node_exporter-1.2.2.linux-amd64/node_exporter
+    dest: /usr/local/bin/
+    owner: node_exporter
+    group: node_exporter
+    mode: '0700'
+    remote_src: yes
+
+- name: 'create service file'
+  template:
+    src: monitoring/node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+  notify:
+    - restart-node_exporter

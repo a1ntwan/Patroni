@@ -1,0 +1,18 @@
+vrrp_instance {{ ansible_hostname }} {
+  state BACKUP
+{% if ansible_distribution_file_variety == 'RedHat' %}
+  interface {{ interface_rh }}
+{% elif ansible_distribution_file_variety == 'Debian' %}
+  interface {{ interface_deb }}
+{% endif %}
+  virtual_router_id 101
+  priority 100
+  advert_int 1
+  authentication {
+    auth_type PASS
+    auth_pass {{ vrrp_pass }}
+  }
+  virtual_ipaddress {
+    {{ vip }}
+  }
+}

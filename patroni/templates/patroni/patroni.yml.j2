@@ -1,0 +1,111 @@
+{% for host in groups['psql'] %}
+# PostgreSQL - {{ loop.index }} : {{ hostvars[host]['ansible_host'] }}
+{% endfor %}
+
+{% for host in groups['etcd'] %}
+# etcd - {{ loop.index }}       : {{ hostvars[host]['ansible_host'] }}
+{% endfor %}
+
+# --------------------------------------------------------------------------
+scope: patroni 
+namespace: /cluster/ 
+name: {{ inventory_hostname }} 
+
+restapi:
+  listen: {{ ansible_host }}:8008 
+  connect_address: {{ ansible_host }}:8008 
+
+etcd:
+  hosts: {% for host in groups['etcd'] -%}
+            {{ hostvars[host]['ansible_host'] }}:2379
+            {%- if not loop.last -%}
+            , 
+            {%- endif -%}
+         {%- endfor %}
+
+bootstrap:
+  dcs:
+    ttl: 40
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    synchronous_mode: true
+    postgresql:
+      callbacks:
+        on_role_change: /usr/patroni/callback.sh
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica 
+        hot_standby: "on" 
+        max_wal_senders: 4 
+        max_replication_slots: 4
+        wal_keep_size: "{{ min_keep_wal | default('512MB') }}"
+        max_slot_wal_keep_size: {{ max_keep_wal | default('-1') }} 
+        wal_log_hints: "on" 
+        archive_mode: "always" 
+        archive_timeout: 600s
+        archive_command: "rsync -azu -e 'ssh -o StrictHostKeyChecking=no'  %p postgres@{{ hostvars['res1']['ansible_host'] }}:/usr/patroni/pg_archive/%f"
+        logging_collector: "on"
+        log_directory: "/var/log/postgresql"
+        log_filename: "patroni-postgres-%a.log"
+        max_connections: 200
+        shared_buffers: 256MB
+        effective_cache_size: 768MB
+        maintenance_work_mem: 64MB
+        checkpoint_completion_target: 0.9
+        wal_buffers: 7864kB
+        default_statistics_target: 100
+        random_page_cost: 4
+        effective_io_concurrency: 2
+        work_mem: 655kB
+        min_wal_size: 1GB
+        max_wal_size: 4GB
+      recovery_conf:
+        restore_command: "cp -f /usr/patroni/pg_archive/%f %p"
+  pg_hba:
+{% for host in groups['psql'] %}
+    - host replication replicator {{ hostvars[host]['ansible_host'] }}/24 md5
+{% endfor %}
+{% for host in groups['psql'] %}
+    - host postgres root {{ hostvars[host]['ansible_host'] }}/24 md5
+{% endfor %}
+    - host replication replicator ::1/128 md5
+    - host replication replicator 127.0.0.1/8 md5
+    - host all root 127.0.0.1/24 trust
+{% for host in groups['pgbouncer'] %}
+    - host all admin {{ hostvars[host]['ansible_host'] }}/20 trust
+{% endfor %}
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+    - locale: en_US.UTF8
+  users:
+    admin:
+      password: admin
+      options:
+      - createrole
+      - createdb
+postgresql:
+  listen: 127.0.0.1,{{ ansible_host }}:5432 
+  connect_address: {{ ansible_host }}:5432
+  data_dir: /usr/patroni/pgdata 
+{% if ansible_distribution_file_variety == 'Debian' %}
+  bin_dir: /usr/lib/postgresql/{{ version }}/bin
+{% elif ansible_distribution_file_variety == 'RedHat' %}
+  bin_dir: /usr/pgsql-{{ version }}/bin 
+{% endif %}
+  pgpass: /tmp/pgpass0
+  authentication:
+    replication:
+      username: replicator
+      password: pwd
+    superuser:
+      username: root
+      password: admin
+  create_replica_methods:
+    basebackup:
+      checkpoint: 'fast'
+  parameters:
+    unix_socket_directories: '/var/run/postgresql'
+    external_pid_file: /var/run/postgresql/{{ version }}-main.pid

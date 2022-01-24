@@ -1,0 +1,59 @@
+---
+- name: 'create user etcd and etcd root dir'
+  user:
+    name: etcd
+    home: '{{ etcd_path }}'
+
+- name: 'install and configure etcd: check if we need to download etcd and etcdctl'
+  stat:
+    path: /usr/local/bin/etcdctl
+  register: executable
+
+- name: 'install and configure etcd: download script'
+  copy:
+    src: etcd/etcd.sh
+    dest: /tmp/etcd.sh
+    owner: root
+    group: root
+    mode: '0700'
+  when: executable.stat.exists == false
+
+- name: 'install and configure etcd: run script'
+  shell:
+    cmd: /tmp/etcd.sh
+  when: executable.stat.exists == false
+
+- name: 'install and configure etcd: move to /usr/local/bin'
+  copy:
+    src: '{{ item }}'
+    dest: /usr/local/bin
+    owner: etcd
+    group: etcd
+    mode: '0770'
+    remote_src: yes
+  loop:
+    - /tmp/etcd-download-test/etcd
+    - /tmp/etcd-download-test/etcdctl
+  when: executable.stat.exists == false
+
+- name: 'create /etc/etcd'
+  file:
+    path: /etc/etcd
+    owner: etcd
+    group: etcd
+    mode: '0770'
+    state: directory
+
+- name: 'copy etcd.conf'
+  template:
+    src: etcd/etcd.conf.j2
+    dest: /etc/etcd/etcd.conf
+    owner: etcd
+    group: etcd
+    mode: '0660'
+
+- name: 'create and run etcd.service'
+  copy:
+    src: etcd/etcd.service
+    dest: /etc/systemd/system/etcd.service
+  notify: start-etcd

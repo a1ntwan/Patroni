@@ -1,0 +1,28 @@
+---
+- name: 'Install PostgreSQL servers and postgres exporters'
+  import_tasks: postgres.yml
+  when: inventory_hostname in groups['psql']
+
+- name: 'Install and configure etcd cluster'
+  import_tasks: etcd.yml
+  when: inventory_hostname in groups['etcd']
+
+- name: 'Install and configure Patroni cluster'
+  import_tasks: patroni.yml
+  when: inventory_hostname in groups['psql']
+
+- name: 'Install and configure PgBouncers with confd for decoupling rw and ro nodes'
+  import_tasks: pgbouncer.yml
+  when: inventory_hostname in groups['pgbouncer']
+
+- name: 'install and configure node exporters'
+  import_tasks: node_exporter.yml
+  when: inventory_hostname not in groups['monitoring']
+
+- name: 'install and configure Prometheus and Grafana'
+  import_tasks: monitoring.yml
+  when: inventory_hostname in groups['monitoring']
+
+- name: 'install and configure HAproxy'
+  import_tasks: haproxy.yml
+  when: inventory_hostname in groups['ha']

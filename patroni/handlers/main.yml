@@ -1,0 +1,67 @@
+---
+- name: start-etcd
+  systemd:
+    name: etcd
+    daemon_reload: yes
+    state: started
+    enabled: yes
+
+- name: start-patroni
+  systemd:
+    name: patroni
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: restart-confd
+  systemd:
+    name: confd.service
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: run-pgbouncer
+  systemd:
+    name: pgbouncer
+    state: restarted
+    enabled: yes
+    
+- name: restart-node_exporter
+  systemd:
+    name: node_exporter.service
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: restart-postgres_exporter
+  systemd:
+    name: postgres_exporter.service
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: restart-prometheus
+  systemd:
+    name: prometheus.service
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: restart-grafana
+  systemd:
+    name: grafana-server
+    state: restarted
+    daemon_reload: yes
+    enabled: yes
+
+- name: restart-ha
+  systemd:
+    name: haproxy
+    state: restarted
+    enabled: yes
+
+- name: restart-keepalived
+  systemd:
+    name: keepalived
+    state: restarted
+    enabled: yes

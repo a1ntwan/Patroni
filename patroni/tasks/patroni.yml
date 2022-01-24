@@ -1,0 +1,182 @@
+---
+- name: '[RHEL8] Patroni installation'
+  block:
+    - yum:
+        name: '{{ item }}'
+        state: present
+        update_cache: yes
+        disable_gpg_check: yes
+      loop:
+        - epel-release
+        - python3-psycopg2
+        - python3-pip
+        - python3-pyyaml
+        - gcc
+        - python3-devel
+    - pip:
+        name: '{{ item }}'
+        state: latest
+      loop:
+        - setuptools
+        - patroni[etcd]
+        - urllib3
+
+    - name: 'create ssh keys'
+      user:
+        name: postgres
+        generate_ssh_key: yes
+        groups: wheel
+
+  when:
+     - ansible_distribution_file_variety == 'RedHat'
+     - ansible_distribution_major_version == '8'
+  tags:
+    - install
+
+- name: '[RHEL7] Patroni installation'
+  block:
+    - yum:
+        name: '{{ item }}'
+        state: present
+        update_cache: yes
+        disable_gpg_check: yes
+      loop:
+        - epel-release
+        - python3-psycopg2
+        - python3-pip
+        - PyYAML
+        - gcc
+        - python3-devel
+    - pip:
+        name: '{{ item }}'
+        state: latest
+      loop:
+        - setuptools
+        - patroni[etcd]
+      vars:
+        ansible_python_interpreter: /bin/python3
+
+    - name: 'create ssh keys'
+      user:
+        name: postgres
+        generate_ssh_key: yes
+        groups: wheel
+
+  when:
+    - ansible_distribution_file_variety == 'RedHat'
+    - ansible_distribution_major_version == '7'
+  tags:
+    - install
+
+- name: '[Debian/Ubuntu] Patroni installation'
+  block:
+    - apt:
+        update_cache: yes
+        force_apt_get: yes
+    - shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 5; done;
+    - apt:
+        name: '{{ item }}'
+        state: present
+        force_apt_get: yes
+      loop:
+        - python3-psycopg2
+        - python3-pip
+        - python-yaml
+        - gcc
+        - python3-dev
+    - pip:
+        name: '{{ item }}'
+        state: latest
+      loop:
+        - setuptools
+        - patroni[etcd]
+
+    - name: 'create ssh keys'
+      user:
+        name: postgres
+        generate_ssh_key: yes
+        groups: sudo
+
+  when: ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
+  tags:
+    - install
+
+- name: 'configure postgres user'
+  lineinfile:
+    path: /etc/sudoers.d/patroni
+    create: yes
+    state: present
+    line: 'postgres  ALL=(ALL:ALL) NOPASSWD:/bin/systemctl restart patroni.service'
+    validate: /usr/sbin/visudo -cf %s
+
+- name: 'place public key in a variable'
+  shell:
+    cmd: cat /var/lib/postgresql/.ssh/id_rsa.pub 
+  register: keys
+
+- name: 'copy keys'
+  authorized_key:
+    user: postgres
+    key: '{{ item[0] }}'
+  delegate_to: '{{ item[1] }}'
+  with_nested:
+    - "{{ keys.stdout }}"
+    - "{{ groups['psql'] }}"
+
+- name: 'patroni binaries rules'
+  file:
+    path: /usr/local/bin/{{ item }}
+    owner: postgres
+    group: postgres
+    mode: '0700'
+  loop:
+    - patroni
+    - patroni_aws
+    - patronictl
+    - patroni_raft_controller
+    - patroni_wale_restore
+    - ydiff
+  tags:
+    - install
+
+- name: 'create patroni dirs'
+  file:
+    path: '{{ item }}'
+    owner: postgres
+    group: postgres
+    state: directory
+  loop:
+    - /etc/patroni
+    - /usr/patroni/pg_archive
+    - /var/log/postgresql
+
+- name: 'copy patroni.yml to /etc/patroni and copy callback.sh'
+  template:
+    src: '{{ item.src }}'
+    dest: '{{ item.dst }}'
+    owner: postgres
+    group: postgres
+    mode: '{{ item.mode }}'
+  loop:
+    - { src: 'patroni/patroni.yml.j2', dst: '/etc/patroni/patroni.yml', mode: '0600' }
+    - { src: 'patroni/callback.sh.j2', dst: '/usr/patroni/callback.sh', mode: '0700' }
+
+- name: 'creating patroni service'
+  copy:
+    src: patroni/patroni.service
+    dest: /etc/systemd/system/patroni.service
+
+
+- name: 'start master patroni'
+  debug:
+    msg: 'trigger patroni master start'
+  notify: start-patroni
+  changed_when: true
+  when: inventory_hostname == 'psql1'
+
+- name: 'start patroni'
+  debug:
+    msg: 'trigger patroni start'
+  notify: start-patroni
+  changed_when: true
+  when: inventory_hostname != 'res1'

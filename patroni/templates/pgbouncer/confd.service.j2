@@ -1,0 +1,21 @@
+[Unit]
+Description=Confd service
+Documentation=https://github.com/kelseyhightower/confd
+After=syslog.target network.target
+
+[Service]
+{% if ansible_distribution_file_variety == 'RedHat' %}
+User=pgbouncer
+Group=pgbouncer
+{% elif ansible_distribution_file_variety == 'Debian' %}
+User=postgres
+Group=postgres
+{% endif %}
+Type=simple
+ExecStart=/usr/local/bin/confd -interval 1 -backend etcd {% for host in groups['etcd'] -%} -node http://{{ hostvars[host]['ansible_host'] }}:2379 {%- if not loop.last %} {% endif %}{%- endfor %}
+
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+---
+version: 14
+etcd_path: /db/etcd
+
+limit: 65535
+
+min_keep_wal: 1024MB
+max_keep_wal: -1
+
+keep_master: ha1
+keep_backup: ha2
+
+interface_rh: eth1
+interface_deb: enp0s8
+
+vrrp_pass: keepalived
+
+vip: 172.20.0.200 

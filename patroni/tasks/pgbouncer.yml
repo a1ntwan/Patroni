@@ -1,0 +1,192 @@
+---
+- name: '[RHEL8/7] PgBouncer and confd installation'
+  block:
+    - yum:
+        name: pgbouncer
+        state: latest
+        update_cache: yes
+
+    - user:
+        name: pgbouncer
+        groups: wheel
+
+    - name: 'change limit for opened files'
+      lineinfile:
+        path: /etc/default/pgbouncer
+        line: ulimit -n {{ limit }}
+
+    - name: 'download confd binary'
+      get_url:
+        url: https://github.com/kelseyhightower/confd/releases/download/v0.16.0/confd-0.16.0-linux-amd64
+        dest: /usr/local/bin/confd
+        owner: pgbouncer
+        group: pgbouncer
+        mode: '0700'
+      tags:
+        - install
+
+    - name: 'configure confd'
+      file:
+        path: /etc/confd/{{ item }}
+        owner: pgbouncer
+        group: pgbouncer
+        mode: '0755'
+        state: directory
+      loop:
+        - conf.d
+        - templates
+
+    - name: 'copy pgbouncer.toml template'
+      template:
+        src: pgbouncer/pgbouncer.toml.j2
+        dest: /etc/confd/conf.d/pgbouncer.toml
+        owner: pgbouncer
+        group: pgbouncer
+        mode: '0644'
+
+    - name: 'copy pgbouncer.ini template'
+      template:
+        src: pgbouncer/pgbouncer.ini.tmpl.j2
+        dest: /etc/confd/templates/pgbouncer.ini.tmpl
+        owner: postgres
+        group: postgres
+        mode: '0644'
+
+    - name: 'configure confd user'
+      lineinfile:
+        path: /etc/sudoers.d/pgbouncer
+        create: yes
+        state: present
+        line: 'pgbouncer ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload pgbouncer'
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: 'create /etc/pgbouncer'
+      file:
+        path: /etc/pgbouncer
+        owner: pgbouncer
+        group: pgbouncer
+        mode: '0755'
+        state: directory
+
+    - name: 'create confd service'
+      template:
+        src: pgbouncer/confd.service.j2
+        dest: /etc/systemd/system/confd.service
+      notify: restart-confd
+
+    - name: 'configure PgBouncer'
+      copy:
+        src: '{{ item }}'
+        dest: /etc/pgbouncer
+        owner: pgbouncer
+        group: pgbouncer
+        mode: '0644'
+      loop:
+        - pgbouncer/userlist.txt
+
+  when:
+     - ansible_distribution_file_variety == 'RedHat'
+
+
+- name: '[Debian/Ubuntu] PgBouncer and confd installation'
+  block:
+
+    - user:
+        name: postgres
+        groups: sudo
+
+    - apt:
+        name: pgbouncer
+        state: latest
+        update_cache: yes
+
+    - name: 'change limit for opened files'
+      lineinfile:
+        path: /etc/default/pgbouncer
+        line: ulimit -n {{ limit }}
+
+    - name: 'download confd binary'
+      get_url:
+        url: https://github.com/kelseyhightower/confd/releases/download/v0.16.0/confd-0.16.0-linux-amd64
+        dest: /usr/local/bin/confd
+        owner: postgres
+        group: postgres
+        mode: '0700'
+      tags:
+        - install
+
+    - name: 'configure confd'
+      file:
+        path: /etc/confd/{{ item }}
+        owner: postgres
+        group: postgres
+        mode: '0755'
+        state: directory
+      loop:
+        - conf.d
+        - templates
+
+    - name: 'copy pgbouncer.toml template'
+      template:
+        src: pgbouncer/pgbouncer.toml.j2
+        dest: /etc/confd/conf.d/pgbouncer.toml
+        owner: postgres
+        group: postgres
+        mode: '0644'
+
+    - name: 'copy pgbouncer.ini template'
+      template:
+        src: pgbouncer/pgbouncer.ini.tmpl.j2
+        dest: /etc/confd/templates/pgbouncer.ini.tmpl
+        owner: postgres
+        group: postgres
+        mode: '0644'
+   
+    - name: 'configure confd user'
+      lineinfile:
+        path: /etc/sudoers.d/pgbouncer
+        create: yes
+        state: present
+        line: 'postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload pgbouncer'
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: 'create /etc/pgbouncer'
+      file:
+        path: /etc/pgbouncer
+        owner: postgres
+        group: postgres
+        mode: '0755'
+        state: directory
+
+    - name: 'create confd service'
+      template:
+        src: pgbouncer/confd.service.j2
+        dest: /etc/systemd/system/confd.service
+      notify: restart-confd
+
+    - name: 'configure PgBouncer'
+      copy:
+        src: '{{ item }}'
+        dest: /etc/pgbouncer
+        owner: postgres
+        group: postgres
+        mode: '0644'
+      loop:
+        - pgbouncer/userlist.txt
+
+  when: ansible_distribution == 'Ubuntu' or ansible_distribution == 'Debian'
+
+- name: 'change sysctl.conf file-max'
+  sysctl:
+    name: fs.file-max
+    value: '{{ limit }}'
+    state: present
+    sysctl_set: yes
+
+- name: 'change ulimit -n'
+  lineinfile:
+    path: /etc/security/limits.conf
+    line: |
+      *     soft nofile {{ limit }}
+      *     hard nofile {{ limit }}
+  notify: run-pgbouncer

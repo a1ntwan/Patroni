@@ -1,0 +1,20 @@
+[databases]
+{% raw %}{{range gets "/members/*"}}{{$data := json .Value}}{{$role := $data.role}}{{$hostport := index (split $data.conn_url "/") 2}}{{$ip := index (split $hostport ":") 0}}{{$port := index (split $hostport ":") 1}}{{if eq $role "master"}}courses_db_rw = auth_user=admin host={{ $ip }} port={{ $port }} dbname=courses_db{{printf "\n"}}{{else if eq $role "replica"}}courses_db_ro = auth_user=admin host={{ $ip }} port={{ $port }} dbname=courses_db{{printf "\n"}}{{end}}{{end}}
+
+{% endraw %}
+[pgbouncer]
+listen_addr = {{ ansible_host }}
+listen_port = 6432
+auth_type = scram-sha-256
+auth_file = /etc/pgbouncer/userlist.txt
+admin_users = root,admin
+pool_mode = transaction
+max_client_conn = 2500
+default_pool_size = 50
+{% if ansible_distribution_file_variety == 'RedHat' %}
+logfile = /var/log/pgbouncer/pgbouncer.log
+pidfile = /run/pgbouncer/pgbouncer.pid
+{% elif ansible_distribution_file_variety == 'Debian' %}
+logfile = /var/log/postgresql/pgbouncer.log
+pidfile = /run/postgresql/pgbouncer.pid
+{% endif %} 
